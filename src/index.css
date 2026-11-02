@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes save-progress-move {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.save-progress {
+  animation: save-progress-move 900ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-progress {
+    animation: none;
+    transform: translateX(200%);
+  }
+}

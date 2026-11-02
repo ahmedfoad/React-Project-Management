@@ -1,7 +1,19 @@
 import { useState } from "react";
 import NewProject from "../components/NewProject";
+import NewTask from "../components/NewTask";
 import NoProjectFound from "../components/NoProjectFound";
+import Pagination from "../components/Pagination";
 import ProjectSidebar from "../components/ProjectSidebar";
+
+function makeTasks(projectId, count, completedCount) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${projectId}-${index + 1}`,
+    title: `Project task ${index + 1}`,
+    description: "",
+    dueDate: "No date",
+    completed: index < completedCount,
+  }));
+}
 
 const initialProjects = [
   {
@@ -11,8 +23,7 @@ const initialProjects = [
     dueDate: "Nov 18",
     category: "Design",
     tone: "bg-emerald-100 text-emerald-800",
-    completed: 8,
-    tasks: 12,
+    tasks: makeTasks(1, 12, 8),
     initials: ["JD", "MK", "AL"],
   },
   {
@@ -22,8 +33,7 @@ const initialProjects = [
     dueDate: "Nov 24",
     category: "Product",
     tone: "bg-sky-100 text-sky-800",
-    completed: 5,
-    tasks: 9,
+    tasks: makeTasks(2, 9, 5),
     initials: ["MK", "SR"],
   },
   {
@@ -33,8 +43,7 @@ const initialProjects = [
     dueDate: "Dec 02",
     category: "Marketing",
     tone: "bg-amber-100 text-amber-800",
-    completed: 3,
-    tasks: 8,
+    tasks: makeTasks(3, 8, 3),
     initials: ["AL", "JD", "SR"],
   },
 ];
@@ -47,9 +56,19 @@ function App() {
   const [activeFilter, setActiveFilter] = useState("All projects");
   const [search, setSearch] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [editingProject, setEditingProject] = useState(null);
+  const [taskDialog, setTaskDialog] = useState(null);
+  const [projectPage, setProjectPage] = useState(1);
+  const [taskPage, setTaskPage] = useState(1);
+  const [feedback, setFeedback] = useState("");
+  const pageSize = 2;
+  const taskPageSize = 5;
 
   const filteredProjects = projects.filter((project) => {
-    const progress = project.tasks ? project.completed / project.tasks : 0;
+    const completed = project.tasks.filter((task) => task.completed).length;
+    const progress = project.tasks.length
+      ? completed / project.tasks.length
+      : 0;
     const matchesFilter =
       activeFilter === "All projects" ||
       (activeFilter === "Completed" && progress === 1) ||
@@ -63,13 +82,31 @@ function App() {
     return matchesFilter && matchesProject && matchesSearch;
   });
   const totalTasks = projects.reduce(
-    (total, project) => total + project.tasks,
+    (total, project) => total + project.tasks.length,
     0,
   );
   const completedTasks = projects.reduce(
-    (total, project) => total + project.completed,
+    (total, project) =>
+      total + project.tasks.filter((task) => task.completed).length,
     0,
   );
+  const visibleProjects = filteredProjects.slice(
+    (projectPage - 1) * pageSize,
+    projectPage * pageSize,
+  );
+  const activeProject = projects.find(
+    (project) => project.id === activeProjectId,
+  );
+  const visibleTasks =
+    activeProject?.tasks.slice(
+      (taskPage - 1) * taskPageSize,
+      taskPage * taskPageSize,
+    ) || [];
+
+  function showFeedback(message) {
+    setFeedback(message);
+    window.setTimeout(() => setFeedback(""), 2500);
+  }
 
   function handleCreateProject(projectDetails) {
     const project = {
@@ -77,8 +114,7 @@ function App() {
       id: Date.now(),
       category: "New project",
       tone: "bg-rose-100 text-rose-800",
-      completed: 0,
-      tasks: 0,
+      tasks: [],
       initials: ["JD"],
     };
 
@@ -87,6 +123,83 @@ function App() {
     setActiveFilter("All projects");
     setSearch("");
     setIsCreatingProject(false);
+    showFeedback("Project created");
+  }
+
+  function handleSaveProject(projectDetails) {
+    setProjects((currentProjects) =>
+      currentProjects.map((project) =>
+        project.id === editingProject.id
+          ? { ...project, ...projectDetails }
+          : project,
+      ),
+    );
+    setEditingProject(null);
+    showFeedback("Project updated");
+  }
+
+  function handleDeleteProject(projectId) {
+    if (!window.confirm("Delete this project and all its tasks?")) return;
+    setProjects((currentProjects) =>
+      currentProjects.filter((project) => project.id !== projectId),
+    );
+    if (activeProjectId === projectId) setActiveProjectId(null);
+    setProjectPage(1);
+    showFeedback("Project deleted");
+  }
+
+  function handleSaveTask(taskDetails) {
+    const { task, projectId } = taskDialog;
+    setProjects((currentProjects) =>
+      currentProjects.map((project) => {
+        if (project.id !== projectId) return project;
+        const tasks = task
+          ? project.tasks.map((item) =>
+              item.id === task.id ? { ...item, ...taskDetails } : item,
+            )
+          : [
+              { ...taskDetails, id: Date.now(), completed: false },
+              ...project.tasks,
+            ];
+        return { ...project, tasks };
+      }),
+    );
+    setTaskDialog(null);
+    setTaskPage(1);
+    showFeedback(task ? "Task updated" : "Task added");
+  }
+
+  function handleDeleteTask(taskId) {
+    if (!window.confirm("Delete this task?")) return;
+    setProjects((currentProjects) =>
+      currentProjects.map((project) =>
+        project.id === activeProjectId
+          ? {
+              ...project,
+              tasks: project.tasks.filter((task) => task.id !== taskId),
+            }
+          : project,
+      ),
+    );
+    setTaskPage(1);
+    showFeedback("Task deleted");
+  }
+
+  function handleToggleTask(taskId) {
+    setProjects((currentProjects) =>
+      currentProjects.map((project) =>
+        project.id === activeProjectId
+          ? {
+              ...project,
+              tasks: project.tasks.map((task) =>
+                task.id === taskId
+                  ? { ...task, completed: !task.completed }
+                  : task,
+              ),
+            }
+          : project,
+      ),
+    );
   }
 
   return (
@@ -94,8 +207,15 @@ function App() {
       <ProjectSidebar
         projects={projects}
         activeProjectId={activeProjectId}
-        onSelectProject={setActiveProjectId}
-        onShowAllProjects={() => setActiveProjectId(null)}
+        onSelectProject={(projectId) => {
+          setActiveProjectId(projectId);
+          setTaskPage(1);
+          setProjectPage(1);
+        }}
+        onShowAllProjects={() => {
+          setActiveProjectId(null);
+          setProjectPage(1);
+        }}
         onAddProject={() => setIsCreatingProject(true)}
       />
 
@@ -187,7 +307,10 @@ function App() {
                 <input
                   type="search"
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setProjectPage(1);
+                  }}
                   placeholder="Search projects"
                   className="h-11 w-full rounded-xl border border-[#dfe6e1] bg-white pl-10 pr-4 text-sm outline-none transition placeholder:text-[#9aa69f] focus:border-[#4b8a70] focus:ring-4 focus:ring-[#4b8a70]/10"
                 />
@@ -203,7 +326,10 @@ function App() {
                 <button
                   key={filter}
                   type="button"
-                  onClick={() => setActiveFilter(filter)}
+                  onClick={() => {
+                    setActiveFilter(filter);
+                    setProjectPage(1);
+                  }}
                   aria-pressed={activeFilter === filter}
                   className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition ${
                     activeFilter === filter
@@ -221,9 +347,12 @@ function App() {
 
             {filteredProjects.length > 0 ? (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {filteredProjects.map((project) => {
-                  const progress = project.tasks
-                    ? Math.round((project.completed / project.tasks) * 100)
+                {visibleProjects.map((project) => {
+                  const completed = project.tasks.filter(
+                    (task) => task.completed,
+                  ).length;
+                  const progress = project.tasks.length
+                    ? Math.round((completed / project.tasks.length) * 100)
                     : 0;
 
                   return (
@@ -237,18 +366,33 @@ function App() {
                         >
                           {project.category}
                         </span>
-                        <button
-                          type="button"
-                          aria-label={`Open ${project.title}`}
-                          onClick={() => setActiveProjectId(project.id)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[#84928b] transition hover:bg-[#f1f5f2] hover:text-[#1f5946] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4b8a70]"
-                        >
-                          <span aria-hidden="true">↗</span>
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            aria-label={`Edit ${project.title}`}
+                            title="Edit project"
+                            onClick={() => setEditingProject(project)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#84928b] transition hover:bg-[#f1f5f2] hover:text-[#1f5946] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4b8a70]"
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${project.title}`}
+                            title="Delete project"
+                            onClick={() => handleDeleteProject(project.id)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#84928b] transition hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                          >
+                            ×
+                          </button>
+                        </div>
                       </div>
                       <button
                         type="button"
-                        onClick={() => setActiveProjectId(project.id)}
+                        onClick={() => {
+                          setActiveProjectId(project.id);
+                          setTaskPage(1);
+                        }}
                         className="block text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4b8a70]"
                       >
                         <h3 className="text-lg font-semibold text-[#18372e] group-hover:text-[#1f5946]">
@@ -303,7 +447,7 @@ function App() {
                         </div>
                         <div className="text-right text-xs text-[#78867e]">
                           <p>
-                            {project.completed}/{project.tasks} tasks
+                            {completed}/{project.tasks.length} tasks
                           </p>
                           <p className="mt-1">Due {project.dueDate}</p>
                         </div>
@@ -317,6 +461,106 @@ function App() {
                 setIsCreatingProject={() => setIsCreatingProject(true)}
               />
             )}
+            <Pagination
+              page={projectPage}
+              pageCount={Math.ceil(filteredProjects.length / pageSize)}
+              onPageChange={setProjectPage}
+            />
+
+            {activeProject && (
+              <section
+                aria-labelledby="tasks-heading"
+                className="mt-10 border-t border-[#dfe6e1] pt-7"
+              >
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2
+                      id="tasks-heading"
+                      className="text-xl font-semibold text-[#18372e]"
+                    >
+                      Tasks
+                    </h2>
+                    <p className="mt-1 text-sm text-[#718078]">
+                      {activeProject.tasks.length} tasks in{" "}
+                      {activeProject.title}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTaskDialog({ projectId: activeProject.id, task: null })
+                    }
+                    className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1f5946] px-4 text-sm font-semibold text-white transition hover:bg-[#174737] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f5946] focus-visible:ring-offset-2"
+                  >
+                    <span aria-hidden="true">+</span> New task
+                  </button>
+                </div>
+                {activeProject.tasks.length ? (
+                  <div className="divide-y divide-[#e5ebe6] rounded-xl border border-[#e5ebe6] bg-white">
+                    {visibleTasks.map((task) => (
+                      <article
+                        key={task.id}
+                        className="flex flex-wrap items-center gap-3 p-4"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={task.completed}
+                          onChange={() => handleToggleTask(task.id)}
+                          aria-label={`Mark ${task.title} ${task.completed ? "incomplete" : "complete"}`}
+                          className="h-4 w-4 accent-[#1f5946]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <h3
+                            className={`text-sm font-semibold ${task.completed ? "text-[#84928b] line-through" : "text-[#18372e]"}`}
+                          >
+                            {task.title}
+                          </h3>
+                          {task.description && (
+                            <p className="mt-1 text-sm text-[#78867e]">
+                              {task.description}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-xs text-[#78867e]">
+                          Due {task.dueDate}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTaskDialog({ projectId: activeProject.id, task })
+                          }
+                          aria-label={`Edit ${task.title}`}
+                          title="Edit task"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[#84928b] transition hover:bg-[#f1f5f2] hover:text-[#1f5946]"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          aria-label={`Delete ${task.title}`}
+                          title="Delete task"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[#84928b] transition hover:bg-rose-50 hover:text-rose-700"
+                        >
+                          ×
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-[#cfdad2] bg-white p-8 text-center text-sm text-[#78867e]">
+                    No tasks yet. Add one to get started.
+                  </p>
+                )}
+                <Pagination
+                  page={taskPage}
+                  pageCount={Math.ceil(
+                    activeProject.tasks.length / taskPageSize,
+                  )}
+                  onPageChange={setTaskPage}
+                />
+              </section>
+            )}
           </section>
         </div>
       </main>
@@ -326,6 +570,34 @@ function App() {
           onCancel={() => setIsCreatingProject(false)}
           onSave={handleCreateProject}
         />
+      )}
+      {editingProject && (
+        <NewProject
+          key={editingProject.id}
+          project={editingProject}
+          onCancel={() => setEditingProject(null)}
+          onSave={handleSaveProject}
+        />
+      )}
+      {taskDialog && (
+        <NewTask
+          key={taskDialog.task?.id || "new-task"}
+          task={taskDialog.task}
+          projectTitle={
+            projects.find((project) => project.id === taskDialog.projectId)
+              ?.title
+          }
+          onCancel={() => setTaskDialog(null)}
+          onSave={handleSaveTask}
+        />
+      )}
+      {feedback && (
+        <div
+          role="status"
+          className="fixed bottom-5 right-5 z-[60] rounded-lg bg-[#173b31] px-4 py-3 text-sm font-medium text-white shadow-lg"
+        >
+          {feedback}
+        </div>
       )}
     </div>
   );
